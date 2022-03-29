@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -41,7 +42,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 
 			for _, n := range p.Names {
-				pass.Reportf(node.Pos(), "named return %s (%s) found in function %s", n.Name, p.Type, funcDecl.Name.Name)
+				pass.Reportf(node.Pos(), "named return %s (%s) found in function %s", n.Name, types.ExprString(p.Type), funcDecl.Name.Name)
 			}
 		}
 	})
