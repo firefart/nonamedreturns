@@ -1,4 +1,4 @@
-module github.com/FireFart/namedreturnlint
+module github.com/firefart/namedreturnlint
 
 go 1.18
 
