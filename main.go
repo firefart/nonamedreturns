@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/firefart/namedreturnlint/analyzer"
+	"github.com/FireFart/namedreturnlint/analyzer"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
