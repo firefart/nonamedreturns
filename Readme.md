@@ -1,4 +1,4 @@
-# namedreturnlint
+# nonamedreturnlint
 
 I hate named returns in golang because they are error prone. That's why I wrote this linter. That's all
 
