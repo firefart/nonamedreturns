@@ -22,18 +22,27 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// only filter function defintions
 	nodeFilter := []ast.Node{
 		(*ast.FuncDecl)(nil),
+		(*ast.FuncLit)(nil),
 	}
 
 	inspector.Preorder(nodeFilter, func(node ast.Node) {
-		funcDecl := node.(*ast.FuncDecl)
+		var funcResults *ast.FieldList
 
-		results := funcDecl.Type.Results
-		// no return values
-		if results == nil {
+		switch n := node.(type) {
+		case *ast.FuncLit:
+			funcResults = n.Type.Results
+		case *ast.FuncDecl:
+			funcResults = n.Type.Results
+		default:
 			return
 		}
 
-		resultsList := results.List
+		// no return values
+		if funcResults == nil {
+			return
+		}
+
+		resultsList := funcResults.List
 
 		for _, p := range resultsList {
 			if len(p.Names) == 0 {
@@ -42,7 +51,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 
 			for _, n := range p.Names {
-				pass.Reportf(node.Pos(), "named return %s (%s) found in function %s", n.Name, types.ExprString(p.Type), funcDecl.Name.Name)
+				pass.Reportf(node.Pos(), "named return %q with type %q found", n.Name, types.ExprString(p.Type))
 			}
 		}
 	})
