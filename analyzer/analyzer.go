@@ -10,7 +10,7 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name:     "nonamedreturnlint",
+	Name:     "nonamedreturns",
 	Doc:      "Reports all named returns",
 	Run:      run,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},

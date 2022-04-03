@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/firefart/nonamedreturnlint/analyzer"
+	"github.com/firefart/nonamedreturns/analyzer"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
