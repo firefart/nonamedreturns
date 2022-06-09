@@ -23,6 +23,13 @@ var e = func() (err error) { // want `named return "err" with type "error" found
 	return
 }
 
+func deferWithError() (err error) { // want `named return "err" with type "error" found`
+	defer func() {
+		err = nil // use flag to allow this
+	}()
+	return
+}
+
 var (
 	f = func() {
 		return
