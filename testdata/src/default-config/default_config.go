@@ -23,6 +23,10 @@ var e = func() (err error) { // want `named return "err" with type "error" found
 	return
 }
 
+var e2 = func() (_ error) {
+	return
+}
+
 func deferWithError() (err error) { // want `named return "err" with type "error" found`
 	defer func() {
 		err = nil // use flag to allow this
@@ -43,6 +47,10 @@ var (
 		err = nil
 		return
 	}
+
+	h2 = func() (_ error) {
+		return
+	}
 )
 
 // this should not match as the implementation does not need named parameters (see below)
@@ -56,8 +64,21 @@ func funcDefintionImpl2(arg1, arg2 interface{}) (num int, err error) { // want `
 	return 0, nil
 }
 
+func funcDefintionImpl3(arg1, arg2 interface{}) (num int, _ error) { // want `named return "num" with type "int" found`
+	return 0, nil
+}
+
+func funcDefintionImpl4(arg1, arg2 interface{}) (_ int, _ error) {
+	return 0, nil
+}
+
 var funcVar = func() (msg string) { // want `named return "msg" with type "string" found`
 	msg = "c"
+	return msg
+}
+
+var funcVar2 = func() (_ string) {
+	msg := "c"
 	return msg
 }
 
@@ -98,3 +119,5 @@ func myLog(format string, args ...interface{}) {
 type obj struct{}
 
 func (o *obj) func1() (err error) { return nil } // want `named return "err" with type "error" found`
+
+func (o *obj) func2() (_ error) { return nil }

@@ -66,6 +66,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 
 			for _, n := range p.Names {
+				if n.Name == "_" {
+					continue
+				}
+
 				if allowErrorInDefer {
 					if ident, ok := p.Type.(*ast.Ident); ok {
 						if ident.Name == "error" && findDeferWithErrorAssignment(funcBody, n.Name) {

@@ -15,13 +15,12 @@ func twoReturnParams() (i int, err error) { // want `named return "i" with type 
 	return
 }
 
-// TODO: enable test after https://github.com/firefart/nonamedreturns/pull/7
-//func allUnderscoresExceptError() (_ int, err error) {
-//	defer func() {
-//		err = nil
-//	}()
-//	return
-//}
+func allUnderscoresExceptError() (_ int, err error) {
+	defer func() {
+		err = nil
+	}()
+	return
+}
 
 func customName() (myName error) {
 	defer func() {
@@ -70,10 +69,8 @@ func customType() (err myError) { // want `named return "err" with type "myError
 	return
 }
 
-// TODO: replace `i` with `_` after https://github.com/firefart/nonamedreturns/pull/7
-func notTheLast() (err error, i int) { // want `named return "i" with type "int" found`
+func notTheLast() (err error, _ int) {
 	defer func() {
-		i = 0
 		err = nil
 	}()
 	return
