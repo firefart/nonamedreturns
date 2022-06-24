@@ -1,5 +1,7 @@
 package main
 
+import "errors"
+
 func simple() (err error) {
 	defer func() {
 		err = nil
@@ -43,30 +45,85 @@ func errorIsNoAssigned() (err error) { // want `named return "err" with type "er
 	return
 }
 
-func shadowVariable() (err error) {
+func shadowVariable() (err error) { // want `named return "err" with type "error" found`
 	defer func() {
-		err := 123 // linter doesn't understand that this is different variable (even if different type) (yet?)
+		err := errors.New("xxx")
 		_ = err
 	}()
 	return
 }
 
-func shadowVariable2() (err error) {
+func shadowVariableButAssign() (err error) {
 	defer func() {
-		a, err := doSomething() // linter doesn't understand that this is different variable (yet?)
+		{
+			err := errors.New("xxx")
+			_ = err
+		}
+		err = nil
+	}()
+	return
+}
+
+func shadowVariable2() (err error) { // want `named return "err" with type "error" found`
+	defer func() {
+		a, err := doSomething()
 		_ = a
 		_ = err
 	}()
 	return
 }
 
-type myError = error // linter doesn't understand that this is the same type (yet?)
+type errorAlias = error
 
-func customType() (err myError) { // want `named return "err" with type "myError" found`
+func errorAliasIsTheSame() (err errorAlias) {
 	defer func() {
 		err = nil
 	}()
 	return
+}
+
+type myError error // linter doesn't check underlying type (yet?)
+
+func customTypeWithErrorUnderline() (err myError) { // want `named return "err" with type "myError" found`
+	defer func() {
+		err = nil
+	}()
+	return
+}
+
+type myError2 interface{ error } // linter doesn't check interfaces
+
+func customTypeWithTheSameInterface() (err myError2) { // want `named return "err" with type "myError2" found`
+	defer func() {
+		err = nil
+	}()
+	return
+}
+
+var _ error = myError3{}
+
+type myError3 struct{} // linter doesn't check interfaces
+
+func (m myError3) Error() string { return "" }
+
+func customTypeImplementingErrorInterface() (err myError3) { // want `named return "err" with type "myError3" found`
+	defer func() {
+		err = struct{}{}
+	}()
+	return
+}
+
+func shadowErrorType() {
+	type error interface { // linter understands that this is not built-in error, even if it has the same name
+		Error() string
+	}
+	do := func() (err error) { // want `named return "err" with type "error" found`
+		defer func() {
+			err = nil
+		}()
+		return
+	}
+	do()
 }
 
 func notTheLast() (err error, _ int) {

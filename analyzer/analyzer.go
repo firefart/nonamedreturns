@@ -71,8 +71,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 
 				if allowErrorInDefer {
-					if ident, ok := p.Type.(*ast.Ident); ok {
-						if ident.Name == "error" && findDeferWithErrorAssignment(funcBody, n.Name) {
+					if pass.TypesInfo.TypeOf(p.Type).String() == "error" { // with package prefix, so only built-it error fits
+						if findDeferWithVariableAssignment(funcBody, pass.TypesInfo, pass.TypesInfo.ObjectOf(n)) {
 							continue
 						}
 					}
@@ -86,7 +86,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func findDeferWithErrorAssignment(body *ast.BlockStmt, name string) bool {
+func findDeferWithVariableAssignment(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
 	found := false
 
 	ast.Inspect(body, func(node ast.Node) bool {
@@ -96,7 +96,7 @@ func findDeferWithErrorAssignment(body *ast.BlockStmt, name string) bool {
 
 		if d, ok := node.(*ast.DeferStmt); ok {
 			if fn, ok2 := d.Call.Fun.(*ast.FuncLit); ok2 {
-				if findErrorAssignment(fn.Body, name) {
+				if findVariableAssignment(fn.Body, info, variable) {
 					found = true
 					return false
 				}
@@ -109,7 +109,7 @@ func findDeferWithErrorAssignment(body *ast.BlockStmt, name string) bool {
 	return found
 }
 
-func findErrorAssignment(body *ast.BlockStmt, name string) bool {
+func findVariableAssignment(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
 	found := false
 
 	ast.Inspect(body, func(node ast.Node) bool {
@@ -120,7 +120,7 @@ func findErrorAssignment(body *ast.BlockStmt, name string) bool {
 		if a, ok := node.(*ast.AssignStmt); ok {
 			for _, lh := range a.Lhs {
 				if i, ok2 := lh.(*ast.Ident); ok2 {
-					if i.Name == name {
+					if info.ObjectOf(i) == variable {
 						found = true
 						return false
 					}
