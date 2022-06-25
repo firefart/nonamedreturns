@@ -28,6 +28,7 @@ func flags() flag.FlagSet {
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	allowErrorInDefer := pass.Analyzer.Flags.Lookup(FlagAllowErrorInDefer).Value.String() == "true"
+	errorType := types.Universe.Lookup("error").Type()
 
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
@@ -70,12 +71,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 
-				if allowErrorInDefer {
-					if pass.TypesInfo.TypeOf(p.Type).String() == "error" { // with package prefix, so only built-it error fits
-						if findDeferWithVariableAssignment(funcBody, pass.TypesInfo, pass.TypesInfo.ObjectOf(n)) {
-							continue
-						}
-					}
+				if allowErrorInDefer &&
+					types.Identical(pass.TypesInfo.TypeOf(p.Type), errorType) &&
+					findDeferWithVariableAssignment(funcBody, pass.TypesInfo, pass.TypesInfo.ObjectOf(n)) {
+					continue
 				}
 
 				pass.Reportf(node.Pos(), "named return %q with type %q found", n.Name, types.ExprString(p.Type))
