@@ -17,9 +17,9 @@ func TestAll(t *testing.T) {
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	analysistest.Run(t, testdata, Analyzer, "default-config")
 
-	err = Analyzer.Flags.Set(FlagAllowErrorInDefer, "true")
+	err = Analyzer.Flags.Set(FlagReportErrorInDefer, "true")
 	if err != nil {
 		t.Fatalf("Failed to set flag: %s", err)
 	}
-	analysistest.Run(t, testdata, Analyzer, "allow-error-in-defer")
+	analysistest.Run(t, testdata, Analyzer, "report-error-in-defer")
 }

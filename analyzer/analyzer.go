@@ -10,7 +10,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const FlagAllowErrorInDefer = "allow-error-in-defer"
+const FlagReportErrorInDefer = "report-error-in-defer"
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nonamedreturns",
@@ -22,12 +22,12 @@ var Analyzer = &analysis.Analyzer{
 
 func flags() flag.FlagSet {
 	fs := flag.FlagSet{}
-	fs.Bool(FlagAllowErrorInDefer, false, "do not complain about named error, if it is assigned inside defer")
+	fs.Bool(FlagReportErrorInDefer, false, "report named error if it is assigned inside defer")
 	return fs
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	allowErrorInDefer := pass.Analyzer.Flags.Lookup(FlagAllowErrorInDefer).Value.String() == "true"
+	reportErrorInDefer := pass.Analyzer.Flags.Lookup(FlagReportErrorInDefer).Value.String() == "true"
 	errorType := types.Universe.Lookup("error").Type()
 
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -71,7 +71,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 
-				if allowErrorInDefer &&
+				if !reportErrorInDefer &&
 					types.Identical(pass.TypesInfo.TypeOf(p.Type), errorType) &&
 					findDeferWithVariableAssignment(funcBody, pass.TypesInfo, pass.TypesInfo.ObjectOf(n)) {
 					continue
