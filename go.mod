@@ -2,9 +2,9 @@ module github.com/firefart/nonamedreturns
 
 go 1.18
 
-require golang.org/x/tools v0.1.11
+require golang.org/x/tools v0.1.12
 
 require (
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/sys v0.0.0-20220727055044-e65921a090b8 // indirect
+	golang.org/x/sys v0.0.0-20220728004956-3c1f35247d10 // indirect
 )
