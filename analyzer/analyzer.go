@@ -4,13 +4,19 @@ import (
 	"flag"
 	"go/ast"
 	"go/types"
+	"reflect"
+	"strconv"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const FlagReportErrorInDefer = "report-error-in-defer"
+const (
+	FlagReportErrorInDefer  = "report-error-in-defer"
+	FlagReportFunLen        = "report-error-fun-len"
+	DefaultFlagReportFunLen = 0
+)
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nonamedreturns",
@@ -23,11 +29,52 @@ var Analyzer = &analysis.Analyzer{
 func flags() flag.FlagSet {
 	fs := flag.FlagSet{}
 	fs.Bool(FlagReportErrorInDefer, false, "report named error if it is assigned inside defer")
+	fs.Int(FlagReportFunLen, DefaultFlagReportFunLen, "report named error for function length exceed value")
 	return fs
+}
+
+func parseStmts(s []ast.Stmt) int {
+	var total int
+	for _, v := range s {
+		total++
+		switch stmt := v.(type) {
+		case *ast.BlockStmt:
+			total += parseStmts(stmt.List) - 1
+		case *ast.ForStmt, *ast.RangeStmt, *ast.IfStmt,
+			*ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+			total += parseBodyListStmts(stmt)
+		case *ast.CaseClause:
+			total += parseStmts(stmt.Body)
+		case *ast.AssignStmt:
+			total += checkInlineFunc(stmt.Rhs[0])
+		case *ast.GoStmt:
+			total += checkInlineFunc(stmt.Call.Fun)
+		case *ast.DeferStmt:
+			total += checkInlineFunc(stmt.Call.Fun)
+		}
+	}
+	return total
+}
+
+func parseBodyListStmts(t interface{}) int {
+	i := reflect.ValueOf(t).Elem().FieldByName(`Body`).Elem().FieldByName(`List`).Interface()
+	return parseStmts(i.([]ast.Stmt))
+}
+
+func checkInlineFunc(stmt ast.Expr) int {
+	if block, ok := stmt.(*ast.FuncLit); ok {
+		return parseStmts(block.Body.List)
+	}
+	return 0
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	reportErrorInDefer := pass.Analyzer.Flags.Lookup(FlagReportErrorInDefer).Value.String() == "true"
+	reportErrorFunLen, err := strconv.Atoi(pass.Analyzer.Flags.Lookup(FlagReportFunLen).Value.String())
+	if err != nil {
+		reportErrorFunLen = DefaultFlagReportFunLen
+	}
+
 	errorType := types.Universe.Lookup("error").Type()
 
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -55,6 +102,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		// no return values
 		if funcResults == nil {
+			return
+		}
+
+		// report-error-fun-len options
+		if parseStmts(funcBody.List) < reportErrorFunLen {
 			return
 		}
 
