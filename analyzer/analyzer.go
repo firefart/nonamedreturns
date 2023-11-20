@@ -4,13 +4,18 @@ import (
 	"flag"
 	"go/ast"
 	"go/types"
+	"strconv"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const FlagReportErrorInDefer = "report-error-in-defer"
+const (
+	FlagReportErrorInDefer  = "report-error-in-defer"
+	FlagReportFunLen        = "report-error-fun-len"
+	DefaultFlagReportFunLen = 0
+)
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nonamedreturns",
@@ -23,11 +28,17 @@ var Analyzer = &analysis.Analyzer{
 func flags() flag.FlagSet {
 	fs := flag.FlagSet{}
 	fs.Bool(FlagReportErrorInDefer, false, "report named error if it is assigned inside defer")
+	fs.Int(FlagReportFunLen, DefaultFlagReportFunLen, "report named error for function length exceed value")
 	return fs
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	reportErrorInDefer := pass.Analyzer.Flags.Lookup(FlagReportErrorInDefer).Value.String() == "true"
+	reportErrorFunLen, err := strconv.Atoi(pass.Analyzer.Flags.Lookup(FlagReportFunLen).Value.String())
+	if err != nil {
+		reportErrorFunLen = DefaultFlagReportFunLen
+	}
+
 	errorType := types.Universe.Lookup("error").Type()
 
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -55,6 +66,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		// no return values
 		if funcResults == nil {
+			return
+		}
+
+		// report-error-fun-len options
+		if len(funcBody.List) < reportErrorFunLen {
 			return
 		}
 
