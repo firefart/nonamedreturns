@@ -1,6 +1,6 @@
 module github.com/firefart/nonamedreturns
 
-go 1.24
+go 1.23
 
 require golang.org/x/tools v0.31.0
 
