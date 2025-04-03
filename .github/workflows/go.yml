@@ -1,5 +1,12 @@
 name: Go
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+  workflow_dispatch:
 jobs:
   build:
     name: Build
