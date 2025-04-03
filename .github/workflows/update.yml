@@ -8,6 +8,7 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -19,9 +20,13 @@ jobs:
         with:
           go-version: "stable"
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: update
-        run: |
-          make update
+        run: task update
 
       - name: setup git config
         run: |
@@ -29,8 +34,8 @@ jobs:
           git config user.email "<>"
 
       - name: commit changes
-        # need to override the default shell so we can check
-        # for error codes. Otherwise it will always fail if
+        # need to override the default shell, so we can check
+        # for error codes. Otherwise, it will always fail if
         # one command returns an error code other than 0
         shell: bash --noprofile --norc -o pipefail {0}
         run: |
@@ -39,7 +44,7 @@ jobs:
           if [ $exit_status -eq 0 ]; then
             echo "nothing has changed"
           else
-            git add go.mod go.sum
+            git add .
             git commit -m "auto update from github actions"
             git push origin main
           fi
