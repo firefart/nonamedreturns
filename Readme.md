@@ -20,3 +20,7 @@ Named errors used in defers are not reported. If you also want to report them se
 
 4. **Unused Variables**
    Named returns often result in variables being declared in the function signature that are not used within the function body. This can lead to confusion and may make the code less maintainable.
+
+5. **Unintentional scope increase**
+   Named return variables have scope for the whole function, as opposed to local variable which have scope only after they are defined. So, even if you are setting the value at 
+   the last few lines of the function, its scope still spans the whole function.
