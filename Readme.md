@@ -22,5 +22,21 @@ Named errors used in defers are not reported. If you also want to report them se
    Named returns often result in variables being declared in the function signature that are not used within the function body. This can lead to confusion and may make the code less maintainable.
 
 5. **Unintentional scope increase**
-   Named return variables have scope for the whole function, as opposed to local variable which have scope only after they are defined. So, even if you are setting the value at 
-   the last few lines of the function, its scope still spans the whole function.
+   Named return variables have scope for the whole function, as opposed to local variable which have scope only after they are defined. So, even if you are setting the value at the last few lines of the function, its scope still spans the whole function.
+   This allows the variable to be referenced, before it's assigned the first time.
+
+   #### Example
+   ```golang
+   func test(input s) (ret bool) {
+      ....
+      // ret is accessed before it's first assigned,
+      // this code will not error out as the variable 
+      // s already defined.
+      if ret {
+         // do some stuff
+      }
+      ....
+      ret = someRandomFunc(input) // ret is first assigned here
+      }
+   }
+   ```
