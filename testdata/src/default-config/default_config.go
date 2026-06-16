@@ -275,6 +275,50 @@ func (x) badMethod() (err error) { // want `named return "err" with type "error"
 	return
 }
 
+// https://github.com/firefart/nonamedreturns/issues/57
+// err is only read (not assigned) inside the defer, but it is assigned in the
+// function body. This mirrors the common pattern of inspecting the error in a
+// defer (e.g. to set the status of a tracing span) and must not be reported.
+func readInDeferAssignedInBody() (err error) {
+	defer func() {
+		if err == nil {
+			processError(nil)
+		} else {
+			processString(err.Error())
+		}
+	}()
+
+	err = doError()
+
+	return
+}
+
+// like readInDeferAssignedInBody but the error is assigned via a multi-value
+// assignment in the body instead of the defer.
+func readInDeferAssignedInBodyMultiValue() (err error) {
+	defer func() {
+		_ = err
+	}()
+
+	_, err = doSomething()
+
+	return
+}
+
+// counterpart to the issue: the error is read in the defer but never assigned
+// anywhere, so the named return is pointless and must still be reported.
+func readInDeferNeverAssigned() (err error) { // want `named return "err" with type "error" found`
+	defer func() {
+		if err != nil {
+			processError(err)
+		}
+	}()
+
+	return
+}
+
 func processError(error)                    {}
+func processString(string)                  {}
+func doError() error                        { return nil }
 func doSomething() (int, error)             { return 10, nil }
 func multierrAppendInto(*error, error) bool { return false } // https://pkg.go.dev/go.uber.org/multierr#AppendInto

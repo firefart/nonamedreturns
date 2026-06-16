@@ -1,13 +1,127 @@
 # nonamedreturns
 
-I hate named returns in golang because they are error prone. That's why I wrote this linter. That's all
+A Go linter that reports all [named returns](https://go.dev/tour/basics/7) in function and method signatures.
 
-Tutorial on how to write your own linter:
-https://disaev.me/p/writing-useful-go-analysis-linter/
+I hate named returns in golang because they are error prone (see [Why are named returns error prone?](#why-are-named-returns-error-prone) below). That's why I wrote this linter. That's all.
 
-Named errors used in defers are not reported. If you also want to report them set `report-error-in-defer` to true.
+Tutorial on how to write your own linter: <https://disaev.me/p/writing-useful-go-analysis-linter/>
 
-# Why are named returns error prone?
+## Installation
+
+### As a standalone binary
+
+```sh
+go install github.com/firefart/nonamedreturns@latest
+```
+
+Prebuilt binaries for Linux, macOS and Windows are also attached to every [release](https://github.com/firefart/nonamedreturns/releases).
+
+### Via golangci-lint
+
+`nonamedreturns` is bundled with [golangci-lint](https://golangci-lint.run/). You do not need to install it separately; just enable it in your configuration (see [Settings](#settings)).
+
+## Usage
+
+### Standalone
+
+The binary is a standard [`go/analysis`](https://pkg.go.dev/golang.org/x/tools/go/analysis) checker, so it accepts the usual package patterns:
+
+```sh
+# check the current module
+nonamedreturns ./...
+
+# check a single package
+nonamedreturns ./internal/foo
+```
+
+Any named return value produces a diagnostic such as:
+
+```text
+./foo.go:10:1: named return "err" with type "error" found
+```
+
+To see all available flags run:
+
+```sh
+nonamedreturns -help
+```
+
+### golangci-lint
+
+Enable the linter in your `.golangci.yml`:
+
+```yaml
+linters:
+  enable:
+    - nonamedreturns
+```
+
+Then run it as part of your normal lint step:
+
+```sh
+golangci-lint run ./...
+```
+
+## Settings
+
+The linter has a single setting.
+
+### `report-error-in-defer`
+
+|                       |                          |
+| --------------------- | ------------------------ |
+| **Type**              | `bool`                   |
+| **Default**           | `false`                  |
+| **Standalone flag**   | `-report-error-in-defer` |
+| **golangci-lint key** | `report-error-in-defer`  |
+
+A common, legitimate use of a named return is a named `error` that is inspected or modified inside a `defer` before the function returns. By default the linter does **not** report a named return when **all** of the following are true:
+
+1. its type is exactly the built-in `error`,
+2. it is referenced (read or assigned) inside a `defer` closure in the same function, and
+3. it is assigned somewhere in the function body (inside the `defer` or anywhere else).
+
+Set `report-error-in-defer` to `true` if you want these named errors reported as well.
+
+#### Example that is allowed by default
+
+```go
+func doRequest(ctx context.Context) (err error) {
+ span := startSpan(ctx)
+ defer func() {
+  // err is read here to record the outcome
+  if err != nil {
+   span.RecordError(err)
+  }
+  span.End()
+ }()
+
+ err = callSomething()
+ return
+}
+```
+
+This is **not** reported with the default settings (the named `error` is used in the `defer` and assigned in the body), but **is** reported when `report-error-in-defer: true`.
+
+#### Standalone
+
+```sh
+nonamedreturns -report-error-in-defer=true ./...
+```
+
+#### golangci-lint
+
+```yaml
+linters:
+  enable:
+    - nonamedreturns
+  settings:
+    nonamedreturns:
+      # report named error if it is assigned inside defer
+      report-error-in-defer: true
+```
+
+## Why are named returns error prone?
 
 1. **Shadowing of Variables**
    If you have a named return variable that is also used as a local variable within the function, it can lead to shadowing issues. This occurs when the named return variable is unintentionally shadowed by a local variable with the same name, leading to unexpected behavior.
@@ -26,11 +140,12 @@ Named errors used in defers are not reported. If you also want to report them se
    This allows the variable to be referenced, before it's assigned the first time.
 
    #### Example
+
    ```golang
    func test(input s) (ret bool) {
       ....
       // ret is accessed before it's first assigned,
-      // this code will not error out as the variable 
+      // this code will not error out as the variable
       // s already defined.
       if ret {
          // do some stuff

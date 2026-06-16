@@ -34,6 +34,20 @@ func deferWithError() (err error) { // want `named return "err" with type "error
 	return
 }
 
+// https://github.com/firefart/nonamedreturns/issues/57
+// With the flag enabled, the defer/error exemption is disabled entirely, so
+// even errors that are only read inside a defer and assigned in the body are
+// reported.
+func readInDeferAssignedInBody() (err error) { // want `named return "err" with type "error" found`
+	defer func() {
+		if err != nil {
+			_ = err.Error()
+		}
+	}()
+	err = nil
+	return
+}
+
 var (
 	f = func() {
 		return

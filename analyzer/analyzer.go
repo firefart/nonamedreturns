@@ -80,9 +80,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 
+				// A named error return is allowed when it is referenced inside a defer
+				// (e.g. to inspect or modify it before returning) as long as it is also
+				// assigned somewhere in the function body. The assignment may happen
+				// inside the defer itself or anywhere else in the function.
+				obj := pass.TypesInfo.ObjectOf(n)
 				if !reportErrorInDefer &&
 					types.Identical(pass.TypesInfo.TypeOf(p.Type), errorType) &&
-					findDeferWithVariableAssignment(funcBody, pass.TypesInfo, pass.TypesInfo.ObjectOf(n)) {
+					findDeferWithVariableUsage(funcBody, pass.TypesInfo, obj) &&
+					findVariableAssignment(funcBody, pass.TypesInfo, obj) {
 					continue
 				}
 
@@ -94,7 +100,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil // nolint:nilnil
 }
 
-func findDeferWithVariableAssignment(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
+func findDeferWithVariableUsage(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
 	found := false
 
 	ast.Inspect(body, func(node ast.Node) bool {
@@ -104,10 +110,32 @@ func findDeferWithVariableAssignment(body *ast.BlockStmt, info *types.Info, vari
 
 		if d, ok := node.(*ast.DeferStmt); ok {
 			if fn, ok2 := d.Call.Fun.(*ast.FuncLit); ok2 {
-				if findVariableAssignment(fn.Body, info, variable) {
+				if findVariableUsage(fn.Body, info, variable) {
 					found = true
 					return false
 				}
+			}
+		}
+
+		return true
+	})
+
+	return found
+}
+
+func findVariableUsage(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
+	found := false
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		if found {
+			return false // stop inspection
+		}
+
+		// match any reference to the variable, whether it is read or assigned
+		if i, ok := node.(*ast.Ident); ok {
+			if info.ObjectOf(i) == variable {
+				found = true
+				return false
 			}
 		}
 
