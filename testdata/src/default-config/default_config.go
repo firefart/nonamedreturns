@@ -45,6 +45,22 @@ func errorIsNoAssigned() (err error) { // want `named return "err" with type "er
 	return
 }
 
+func readOnlyInDefer() (err error) { // want `named return "err" with type "error" found`
+	_, span := getSpan()
+
+	defer func() {
+		if err == nil {
+			span.SetStatus(statusOk, "")
+		} else {
+			span.SetStatus(statusError, err.Error())
+		}
+
+		span.End()
+	}()
+
+	return
+}
+
 func shadowVariable() (err error) { // want `named return "err" with type "error" found`
 	defer func() {
 		err := errors.New("xxx")
@@ -278,3 +294,15 @@ func (x) badMethod() (err error) { // want `named return "err" with type "error"
 func processError(error)                    {}
 func doSomething() (int, error)             { return 10, nil }
 func multierrAppendInto(*error, error) bool { return false } // https://pkg.go.dev/go.uber.org/multierr#AppendInto
+
+const (
+	statusOk = iota
+	statusError
+)
+
+type fakeSpan struct{}
+
+func (fakeSpan) SetStatus(int, string) {}
+func (fakeSpan) End()                  {}
+
+func getSpan() (int, fakeSpan) { return 0, fakeSpan{} }
