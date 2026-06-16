@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `nonamedreturns` is a Go static-analysis linter that reports all named return values in function and method signatures. It is built on `golang.org/x/tools/go/analysis` and ships both as a standalone binary (via `singlechecker`) and as an importable `analyzer.Analyzer` that golangci-lint embeds.
 
+## Workflow
+
+- Always run `task lint` and `task test` after each change, and make sure both pass before considering the change done.
+- Always add or update tests when adding or changing code.
+
 ## Commands
 
 This project uses [Task](https://taskfile.dev) (`Taskfile.yml`), not Make.

@@ -27,7 +27,7 @@ func flags() flag.FlagSet {
 	return fs
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	reportErrorInDefer := pass.Analyzer.Flags.Lookup(FlagReportErrorInDefer).Value.String() == "true"
 	errorType := types.Universe.Lookup("error").Type()
 
@@ -67,13 +67,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		resultsList := funcResults.List
+		// deferUsed and assigned are computed lazily and at most once per
+		// function: the relatively expensive body walk only happens when there
+		// is an error-typed named return whose defer exemption we need to check.
+		var deferUsed, assigned map[types.Object]bool
 
-		for _, p := range resultsList {
+		for _, p := range funcResults.List {
 			if len(p.Names) == 0 {
 				// all good, the parameter is not named
 				continue
 			}
+
+			isError := types.Identical(pass.TypesInfo.TypeOf(p.Type), errorType)
 
 			for _, n := range p.Names {
 				if n.Name == "_" {
@@ -84,15 +89,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				// (e.g. to inspect or modify it before returning) as long as it is also
 				// assigned somewhere in the function body. The assignment may happen
 				// inside the defer itself or anywhere else in the function.
-				obj := pass.TypesInfo.ObjectOf(n)
-				if !reportErrorInDefer &&
-					types.Identical(pass.TypesInfo.TypeOf(p.Type), errorType) &&
-					findDeferWithVariableUsage(funcBody, pass.TypesInfo, obj) &&
-					findVariableAssignment(funcBody, pass.TypesInfo, obj) {
-					continue
+				if !reportErrorInDefer && isError {
+					if deferUsed == nil {
+						deferUsed, assigned = collectDeferUsageAndAssignments(funcBody, pass.TypesInfo)
+					}
+
+					obj := pass.TypesInfo.ObjectOf(n)
+					if deferUsed[obj] && assigned[obj] {
+						continue
+					}
 				}
 
-				pass.Reportf(node.Pos(), "named return %q with type %q found", n.Name, types.ExprString(p.Type))
+				pass.Reportf(n.Pos(), "named return %q with type %q found", n.Name, types.ExprString(p.Type))
 			}
 		}
 	})
@@ -100,72 +108,44 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil // nolint:nilnil
 }
 
-func findDeferWithVariableUsage(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
-	found := false
+// collectDeferUsageAndAssignments walks body a single time and returns:
+//   - deferUsed: objects referenced (read or written) inside a deferred func literal
+//   - assigned:  objects that appear on the left-hand side of an assignment
+//     anywhere in the body, including inside a deferred func literal
+//
+// Variable shadowing is handled naturally: a shadowed declaration introduces a
+// distinct types.Object, so it does not match the outer named return.
+func collectDeferUsageAndAssignments(body *ast.BlockStmt, info *types.Info) (map[types.Object]bool, map[types.Object]bool) {
+	deferUsed := make(map[types.Object]bool)
+	assigned := make(map[types.Object]bool)
 
 	ast.Inspect(body, func(node ast.Node) bool {
-		if found {
-			return false // stop inspection
-		}
-
-		if d, ok := node.(*ast.DeferStmt); ok {
-			if fn, ok2 := d.Call.Fun.(*ast.FuncLit); ok2 {
-				if findVariableUsage(fn.Body, info, variable) {
-					found = true
-					return false
-				}
-			}
-		}
-
-		return true
-	})
-
-	return found
-}
-
-func findVariableUsage(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
-	found := false
-
-	ast.Inspect(body, func(node ast.Node) bool {
-		if found {
-			return false // stop inspection
-		}
-
-		// match any reference to the variable, whether it is read or assigned
-		if i, ok := node.(*ast.Ident); ok {
-			if info.ObjectOf(i) == variable {
-				found = true
-				return false
-			}
-		}
-
-		return true
-	})
-
-	return found
-}
-
-func findVariableAssignment(body *ast.BlockStmt, info *types.Info, variable types.Object) bool {
-	found := false
-
-	ast.Inspect(body, func(node ast.Node) bool {
-		if found {
-			return false // stop inspection
-		}
-
-		if a, ok := node.(*ast.AssignStmt); ok {
-			for _, lh := range a.Lhs {
-				if i, ok2 := lh.(*ast.Ident); ok2 {
-					if info.ObjectOf(i) == variable {
-						found = true
-						return false
+		switch n := node.(type) {
+		case *ast.AssignStmt:
+			for _, lh := range n.Lhs {
+				if i, ok := lh.(*ast.Ident); ok {
+					if obj := info.ObjectOf(i); obj != nil {
+						assigned[obj] = true
 					}
 				}
 			}
+		case *ast.DeferStmt:
+			if fn, ok := n.Call.Fun.(*ast.FuncLit); ok {
+				ast.Inspect(fn.Body, func(inner ast.Node) bool {
+					if i, ok := inner.(*ast.Ident); ok {
+						if obj := info.ObjectOf(i); obj != nil {
+							deferUsed[obj] = true
+						}
+					}
+					return true
+				})
+			}
 		}
 
+		// keep descending so assignments (and nested defers) inside a deferred
+		// closure are still collected by the outer walk
 		return true
 	})
 
-	return found
+	return deferUsed, assigned
 }
