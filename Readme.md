@@ -64,7 +64,7 @@ golangci-lint run ./...
 
 ## Settings
 
-The linter has a single setting.
+The linter has the following settings.
 
 ### `report-error-in-defer`
 
@@ -119,6 +119,73 @@ linters:
     nonamedreturns:
       # report named error if it is assigned inside defer
       report-error-in-defer: true
+```
+
+### `allow-unused-named-returns`
+
+|                       |                                |
+| --------------------- | ------------------------------ |
+| **Type**              | `bool`                         |
+| **Default**           | `false`                        |
+| **Standalone flag**   | `-allow-unused-named-returns`  |
+| **golangci-lint key** | `allow-unused-named-returns`   |
+
+Named returns are useful as documentation in a signature (for example
+`func add(a, b int) (sum int)` tells the reader what the result means). The risk
+comes from *using* them in the body. Set `allow-unused-named-returns` to `true`
+to keep that documentation value while forbidding any reliance on the named
+return: the name is allowed in the signature but reported when **either**
+
+1. it is referenced anywhere in the body (read or assigned), including inside a
+   `defer`, or
+2. the function contains a naked `return` (which implicitly populates every
+   named return).
+
+> A naked `return` inside a nested closure populates that closure's own results, not the enclosing function's, so it does not trigger a report for the enclosing function.
+
+When this setting is `true` it fully takes over: the default error-in-defer
+exemption and the `report-error-in-defer` setting have no effect.
+
+#### Example that is allowed
+
+```go
+// documented but never used in the body, returned explicitly
+func add(a, b int) (sum int) {
+	return a + b
+}
+```
+
+#### Examples that are reported
+
+```go
+// "sum" is referenced in the body
+func add(a, b int) (sum int) {
+	sum = a + b
+	return
+}
+
+// naked return implicitly uses "sum"
+func add(a, b int) (sum int) {
+	return
+}
+```
+
+#### Standalone
+
+```sh
+nonamedreturns -allow-unused-named-returns=true ./...
+```
+
+#### golangci-lint
+
+```yaml
+linters:
+  enable:
+    - nonamedreturns
+  settings:
+    nonamedreturns:
+      # allow named returns for documentation, but report them if used in the body
+      allow-unused-named-returns: true
 ```
 
 ## Why are named returns error prone?

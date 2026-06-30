@@ -22,4 +22,12 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to set flag: %s", err)
 	}
 	analysistest.Run(t, testdata, Analyzer, "report-error-in-defer")
+
+	if err := Analyzer.Flags.Set(FlagReportErrorInDefer, "false"); err != nil {
+		t.Fatalf("Failed to reset flag: %s", err)
+	}
+	if err := Analyzer.Flags.Set(FlagAllowUnusedNamedReturns, "true"); err != nil {
+		t.Fatalf("Failed to set flag: %s", err)
+	}
+	analysistest.Run(t, testdata, Analyzer, "allow-unused-named-returns")
 }
