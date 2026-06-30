@@ -11,7 +11,10 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const FlagReportErrorInDefer = "report-error-in-defer"
+const (
+	FlagReportErrorInDefer      = "report-error-in-defer"
+	FlagAllowUnusedNamedReturns = "allow-unused-named-returns"
+)
 
 var Analyzer = &analysis.Analyzer{
 	Name:     "nonamedreturns",
@@ -24,11 +27,13 @@ var Analyzer = &analysis.Analyzer{
 func flags() flag.FlagSet {
 	fs := flag.FlagSet{}
 	fs.Bool(FlagReportErrorInDefer, false, "report named error if it is assigned inside defer")
+	fs.Bool(FlagAllowUnusedNamedReturns, false, "allow named returns in the signature but report them if referenced in the body or used by a naked return")
 	return fs
 }
 
 func run(pass *analysis.Pass) (any, error) {
 	reportErrorInDefer := pass.Analyzer.Flags.Lookup(FlagReportErrorInDefer).Value.String() == "true"
+	allowUnusedNamedReturns := pass.Analyzer.Flags.Lookup(FlagAllowUnusedNamedReturns).Value.String() == "true"
 	errorType := types.Universe.Lookup("error").Type()
 
 	inspector, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
@@ -66,6 +71,39 @@ func run(pass *analysis.Pass) (any, error) {
 		if funcResults == nil {
 			return
 		}
+
+		if allowUnusedNamedReturns {
+			var referenced map[types.Object]bool
+			var hasNakedReturn bool
+			usageComputed := false
+
+			for _, p := range funcResults.List {
+				if len(p.Names) == 0 {
+					continue
+				}
+
+				for _, n := range p.Names {
+					if n.Name == "_" {
+						continue
+					}
+
+					if !usageComputed {
+						referenced, hasNakedReturn = collectNamedReturnUsage(funcBody, pass.TypesInfo)
+						usageComputed = true
+					}
+
+					obj := pass.TypesInfo.ObjectOf(n)
+					if referenced[obj] || hasNakedReturn {
+						pass.Reportf(n.Pos(), "named return %q with type %q must not be referenced or used by a naked return", n.Name, types.ExprString(p.Type))
+					}
+				}
+			}
+
+			return
+		}
+
+		// existing behavior: report every named return (subject to the
+		// error-in-defer exemption)
 
 		// deferUsed and assigned are computed lazily and at most once per
 		// function: the relatively expensive body walk only happens when there
@@ -148,4 +186,47 @@ func collectDeferUsageAndAssignments(body *ast.BlockStmt, info *types.Info) (map
 	})
 
 	return deferUsed, assigned
+}
+
+// collectNamedReturnUsage walks body a single time and returns:
+//   - referenced:     objects referenced (read or written) anywhere in the body,
+//     including inside nested closures (which may capture the outer named return)
+//   - hasNakedReturn: true if the body contains a return statement with no result
+//     expressions at the top level of the function (naked returns inside nested
+//     closures are excluded because they populate the closure's own results, not
+//     the enclosing function's named returns)
+//
+// Shadowing is handled naturally: a shadowed declaration introduces a distinct
+// types.Object, so it does not match the outer named return.
+func collectNamedReturnUsage(body *ast.BlockStmt, info *types.Info) (map[types.Object]bool, bool) {
+	referenced := make(map[types.Object]bool)
+	hasNakedReturn := false
+
+	var walk func(node ast.Node, inClosure bool)
+	walk = func(node ast.Node, inClosure bool) {
+		ast.Inspect(node, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.Ident:
+				if obj := info.ObjectOf(x); obj != nil {
+					referenced[obj] = true
+				}
+			case *ast.ReturnStmt:
+				// a naked return inside a closure populates the closure's
+				// own results, not the enclosing function's named returns
+				if !inClosure && len(x.Results) == 0 {
+					hasNakedReturn = true
+				}
+			case *ast.FuncLit:
+				// keep collecting referenced identifiers (closures can
+				// capture the outer named return), but everything inside
+				// the closure is in-closure for naked-return purposes
+				walk(x.Body, true)
+				return false
+			}
+			return true
+		})
+	}
+	walk(body, false)
+
+	return referenced, hasNakedReturn
 }
