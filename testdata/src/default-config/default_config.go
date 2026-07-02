@@ -317,6 +317,85 @@ func readInDeferNeverAssigned() (err error) { // want `named return "err" with t
 	return
 }
 
+// like readInDeferAssignedInBody but the error is assigned implicitly by a
+// `return` statement with a result value instead of an assignment statement.
+// This is the common tracing-span pattern and must not be reported.
+func readInDeferAssignedViaReturn() (err error) {
+	defer func() {
+		if err != nil {
+			processError(err)
+		}
+	}()
+
+	return doError()
+}
+
+// like readInDeferAssignedViaReturn but only one of several returns carries a
+// value; that is still an implicit assignment.
+func readInDeferAssignedViaOneOfManyReturns() (err error) {
+	defer func() {
+		if err != nil {
+			processError(err)
+		}
+	}()
+
+	if true {
+		return doError()
+	}
+
+	return
+}
+
+// the error is assigned via a `for ... = range` statement in the body.
+func readInDeferAssignedViaRange() (err error) {
+	defer func() {
+		if err != nil {
+			processError(err)
+		}
+	}()
+
+	for _, err = range []error{doError()} {
+		processError(err)
+	}
+
+	return
+}
+
+// a return with results inside a nested closure populates the closure's own
+// results and does not implicitly assign the outer named return, so this must
+// still be reported.
+func readInDeferReturnOnlyInClosure() (err error) { // want `named return "err" with type "error" found`
+	defer func() {
+		if err != nil {
+			processError(err)
+		}
+	}()
+
+	f := func() error {
+		return doError()
+	}
+	_ = f
+
+	return
+}
+
+// the deferred closure returns its own (discarded) result; that return does
+// not assign the outer named return either, so this must still be reported.
+func readInDeferClosureOwnReturn() (err error) { // want `named return "err" with type "error" found`
+	defer func() error {
+		processError(err)
+		return doError()
+	}()
+
+	return
+}
+
+// returning a value alone is not enough for the exemption: the error must
+// also be referenced inside a defer.
+func returnsValueButNoDefer() (err error) { // want `named return "err" with type "error" found`
+	return doError()
+}
+
 func processError(error)                    {}
 func processString(string)                  {}
 func doError() error                        { return nil }

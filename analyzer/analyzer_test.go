@@ -30,4 +30,10 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to set flag: %s", err)
 	}
 	analysistest.Run(t, testdata, Analyzer, "allow-unused-named-returns")
+
+	// the flags are process-global state on the Analyzer, so reset them for
+	// anything that runs after this test
+	if err := Analyzer.Flags.Set(FlagAllowUnusedNamedReturns, "false"); err != nil {
+		t.Fatalf("Failed to reset flag: %s", err)
+	}
 }

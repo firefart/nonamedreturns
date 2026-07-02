@@ -79,7 +79,7 @@ A common, legitimate use of a named return is a named `error` that is inspected 
 
 1. its type is exactly the built-in `error`,
 2. it is referenced (read or assigned) inside a `defer` closure in the same function, and
-3. it is assigned somewhere in the function body (inside the `defer` or anywhere else).
+3. it is assigned somewhere in the function: explicitly (inside the `defer` or anywhere else in the body, including via `for ... = range`) or implicitly by a `return` statement with result values (e.g. `return callSomething()`), which assigns every named return before the defers run.
 
 Set `report-error-in-defer` to `true` if you want these named errors reported as well.
 
@@ -101,7 +101,7 @@ func doRequest(ctx context.Context) (err error) {
 }
 ```
 
-This is **not** reported with the default settings (the named `error` is used in the `defer` and assigned in the body), but **is** reported when `report-error-in-defer: true`.
+This is **not** reported with the default settings (the named `error` is used in the `defer` and assigned in the body), but **is** reported when `report-error-in-defer: true`. The same applies when the body ends in `return callSomething()` instead of the explicit assignment — the `return` implicitly assigns `err`.
 
 #### Standalone
 
@@ -123,16 +123,16 @@ linters:
 
 ### `allow-unused-named-returns`
 
-|                       |                                |
-| --------------------- | ------------------------------ |
-| **Type**              | `bool`                         |
-| **Default**           | `false`                        |
-| **Standalone flag**   | `-allow-unused-named-returns`  |
-| **golangci-lint key** | `allow-unused-named-returns`   |
+|                       |                               |
+| --------------------- | ----------------------------- |
+| **Type**              | `bool`                        |
+| **Default**           | `false`                       |
+| **Standalone flag**   | `-allow-unused-named-returns` |
+| **golangci-lint key** | `allow-unused-named-returns`  |
 
 Named returns are useful as documentation in a signature (for example
 `func add(a, b int) (sum int)` tells the reader what the result means). The risk
-comes from *using* them in the body. Set `allow-unused-named-returns` to `true`
+comes from _using_ them in the body. Set `allow-unused-named-returns` to `true`
 to keep that documentation value while forbidding any reliance on the named
 return: the name is allowed in the signature but reported when **either**
 
@@ -151,7 +151,7 @@ exemption and the `report-error-in-defer` setting have no effect.
 ```go
 // documented but never used in the body, returned explicitly
 func add(a, b int) (sum int) {
-	return a + b
+ return a + b
 }
 ```
 
@@ -160,13 +160,13 @@ func add(a, b int) (sum int) {
 ```go
 // "sum" is referenced in the body
 func add(a, b int) (sum int) {
-	sum = a + b
-	return
+ sum = a + b
+ return
 }
 
 // naked return implicitly uses "sum"
 func add(a, b int) (sum int) {
-	return
+ return
 }
 ```
 

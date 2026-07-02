@@ -48,6 +48,17 @@ func readInDeferAssignedInBody() (err error) { // want `named return "err" with 
 	return
 }
 
+// with the flag enabled the exemption is disabled, so an implicit assignment
+// via a `return` with a result value is reported as well
+func readInDeferAssignedViaReturn() (err error) { // want `named return "err" with type "error" found`
+	defer func() {
+		if err != nil {
+			_ = err.Error()
+		}
+	}()
+	return nil
+}
+
 var (
 	f = func() {
 		return

@@ -25,16 +25,19 @@ Run a single test directly with the Go toolchain, e.g. `go test -run TestAll ./a
 
 ## Architecture
 
-The entire linter is in `analyzer/analyzer.go` (~140 lines); `main.go` just wires `analyzer.Analyzer` into `singlechecker.Main`.
+The entire linter is in `analyzer/analyzer.go`; `main.go` just wires `analyzer.Analyzer` into `singlechecker.Main`.
 
 - `Analyzer.Run` (`run`) uses the `inspect` pass to walk only `*ast.FuncDecl` and `*ast.FuncLit` nodes. For each, it iterates the results field list and reports any result name that isn't `_`.
-- The `report-error-in-defer` flag (constant `FlagReportErrorInDefer`) controls one special case: by default a named return of type `error` is **not** reported if it is assigned inside a `defer` closure in the same function body. `findDeferWithVariableAssignment` / `findVariableAssignment` implement this by matching the `types.Object` of the result against assignment LHS identifiers. Set the flag to `true` to report these too.
+- The `report-error-in-defer` flag (constant `FlagReportErrorInDefer`) controls one special case: by default a named return of type `error` is **not** reported when it is referenced inside a `defer` closure **and** assigned somewhere in the function — explicitly (assignment or `for ... = range` statement, inside the defer or anywhere else) or implicitly via a top-level `return` with result values. `collectDeferUsageAndAssignments` implements this with a single closure-aware body walk, matching the `types.Object` of the result. Set the flag to `true` to report these too.
+- The `allow-unused-named-returns` flag (constant `FlagAllowUnusedNamedReturns`) inverts the model: named returns are allowed in the signature but reported when referenced anywhere in the body or when the function contains a naked `return`. `collectNamedReturnUsage` implements this. When this flag is set it fully takes over — the error-in-defer exemption and `report-error-in-defer` have no effect.
+- Both body walks treat nested closures specially: a `return` inside a closure populates the closure's own results, not the enclosing function's, but references/assignments to captured named returns still count. Shadowing is handled by `types.Object` identity.
 
 ## Tests
 
 Tests use `analysistest` (the standard x/tools golden-file harness). Test fixtures live in `testdata/src/<config-name>/`:
 
 - `default-config/` — expectations with the defer/error exemption on.
-- `report-error-in-defer/` — expectations with the flag set to `true`.
+- `report-error-in-defer/` — expectations with `report-error-in-defer` set to `true`.
+- `allow-unused-named-returns/` — expectations with `allow-unused-named-returns` set to `true`.
 
-Expected diagnostics are encoded as `// want "..."` comments inside the fixture `.go` files. To add or change behavior, edit the fixture and its `// want` comments rather than asserting in Go test code. `TestAll` runs the default config first, then flips `FlagReportErrorInDefer` and runs the second fixture set — note the flag is process-global state, so order matters within that test.
+Expected diagnostics are encoded as `// want "..."` comments inside the fixture `.go` files. To add or change behavior, edit the fixture and its `// want` comments rather than asserting in Go test code. `TestAll` runs the fixture sets in the order above, setting and resetting flags between runs — the flags are process-global state on the Analyzer, so order matters within that test.

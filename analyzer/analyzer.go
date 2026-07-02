@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"go/ast"
+	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
@@ -41,7 +42,7 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, errors.New("failed to get inspector")
 	}
 
-	// only filter function defintions
+	// only filter function definitions
 	nodeFilter := []ast.Node{
 		(*ast.FuncDecl)(nil),
 		(*ast.FuncLit)(nil),
@@ -105,10 +106,12 @@ func run(pass *analysis.Pass) (any, error) {
 		// existing behavior: report every named return (subject to the
 		// error-in-defer exemption)
 
-		// deferUsed and assigned are computed lazily and at most once per
-		// function: the relatively expensive body walk only happens when there
-		// is an error-typed named return whose defer exemption we need to check.
+		// deferUsed, assigned and hasReturnWithResults are computed lazily and
+		// at most once per function: the relatively expensive body walk only
+		// happens when there is an error-typed named return whose defer
+		// exemption we need to check.
 		var deferUsed, assigned map[types.Object]bool
+		var hasReturnWithResults bool
 
 		for _, p := range funcResults.List {
 			if len(p.Names) == 0 {
@@ -126,14 +129,16 @@ func run(pass *analysis.Pass) (any, error) {
 				// A named error return is allowed when it is referenced inside a defer
 				// (e.g. to inspect or modify it before returning) as long as it is also
 				// assigned somewhere in the function body. The assignment may happen
-				// inside the defer itself or anywhere else in the function.
+				// inside the defer itself, anywhere else in the function, or implicitly
+				// via a `return` statement with result values (which assigns every
+				// named return before the defers run).
 				if !reportErrorInDefer && isError {
 					if deferUsed == nil {
-						deferUsed, assigned = collectDeferUsageAndAssignments(funcBody, pass.TypesInfo)
+						deferUsed, assigned, hasReturnWithResults = collectDeferUsageAndAssignments(funcBody, pass.TypesInfo)
 					}
 
 					obj := pass.TypesInfo.ObjectOf(n)
-					if deferUsed[obj] && assigned[obj] {
+					if deferUsed[obj] && (assigned[obj] || hasReturnWithResults) {
 						continue
 					}
 				}
@@ -149,43 +154,80 @@ func run(pass *analysis.Pass) (any, error) {
 // collectDeferUsageAndAssignments walks body a single time and returns:
 //   - deferUsed: objects referenced (read or written) inside a deferred func literal
 //   - assigned:  objects that appear on the left-hand side of an assignment
-//     anywhere in the body, including inside a deferred func literal
+//     (including `for ... = range` statements) anywhere in the body, including
+//     inside a deferred func literal
+//   - hasReturnWithResults: true if the body contains a `return` statement with
+//     result values at the top level of the function. Such a return implicitly
+//     assigns every named return before the defers run, so it counts as an
+//     assignment for all of them. Returns inside nested closures (including the
+//     deferred closure itself) populate the closure's own results and are
+//     therefore excluded.
 //
 // Variable shadowing is handled naturally: a shadowed declaration introduces a
 // distinct types.Object, so it does not match the outer named return.
-func collectDeferUsageAndAssignments(body *ast.BlockStmt, info *types.Info) (map[types.Object]bool, map[types.Object]bool) {
+func collectDeferUsageAndAssignments(body *ast.BlockStmt, info *types.Info) (map[types.Object]bool, map[types.Object]bool, bool) {
 	deferUsed := make(map[types.Object]bool)
 	assigned := make(map[types.Object]bool)
+	hasReturnWithResults := false
 
-	ast.Inspect(body, func(node ast.Node) bool {
-		switch n := node.(type) {
-		case *ast.AssignStmt:
-			for _, lh := range n.Lhs {
-				if i, ok := lh.(*ast.Ident); ok {
-					if obj := info.ObjectOf(i); obj != nil {
-						assigned[obj] = true
-					}
-				}
-			}
-		case *ast.DeferStmt:
-			if fn, ok := n.Call.Fun.(*ast.FuncLit); ok {
-				ast.Inspect(fn.Body, func(inner ast.Node) bool {
-					if i, ok := inner.(*ast.Ident); ok {
-						if obj := info.ObjectOf(i); obj != nil {
-							deferUsed[obj] = true
-						}
-					}
-					return true
-				})
+	markAssigned := func(expr ast.Expr) {
+		if i, ok := expr.(*ast.Ident); ok {
+			if obj := info.ObjectOf(i); obj != nil {
+				assigned[obj] = true
 			}
 		}
+	}
 
-		// keep descending so assignments (and nested defers) inside a deferred
-		// closure are still collected by the outer walk
-		return true
-	})
+	var walk func(node ast.Node, inClosure bool)
+	walk = func(node ast.Node, inClosure bool) {
+		ast.Inspect(node, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.AssignStmt:
+				for _, lh := range x.Lhs {
+					markAssigned(lh)
+				}
+			case *ast.RangeStmt:
+				if x.Tok == token.ASSIGN {
+					if x.Key != nil {
+						markAssigned(x.Key)
+					}
+					if x.Value != nil {
+						markAssigned(x.Value)
+					}
+				}
+			case *ast.ReturnStmt:
+				// a return inside a closure populates the closure's own
+				// results, not the enclosing function's named returns
+				if !inClosure && len(x.Results) > 0 {
+					hasReturnWithResults = true
+				}
+			case *ast.DeferStmt:
+				if fn, ok := x.Call.Fun.(*ast.FuncLit); ok {
+					ast.Inspect(fn.Body, func(inner ast.Node) bool {
+						if i, ok := inner.(*ast.Ident); ok {
+							if obj := info.ObjectOf(i); obj != nil {
+								deferUsed[obj] = true
+							}
+						}
+						return true
+					})
+				}
+				// keep descending (via the FuncLit case below) so assignments
+				// and nested defers inside the deferred closure are still
+				// collected by the outer walk
+			case *ast.FuncLit:
+				// everything inside a closure (deferred or not) is in-closure
+				// for return purposes, but assignments to captured named
+				// returns still count
+				walk(x.Body, true)
+				return false
+			}
+			return true
+		})
+	}
+	walk(body, false)
 
-	return deferUsed, assigned
+	return deferUsed, assigned, hasReturnWithResults
 }
 
 // collectNamedReturnUsage walks body a single time and returns:

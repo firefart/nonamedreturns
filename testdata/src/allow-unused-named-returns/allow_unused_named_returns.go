@@ -51,6 +51,20 @@ func underscoreResult() (_ int) {
 	return 1
 }
 
+// allowed: a naked return only populates underscore results, which are never
+// reported
+func nakedReturnUnderscore() (_ int) {
+	return
+}
+
+// reported: "err" is assigned by a range statement in the body
+func rangeAssigned() (err error) { // want `named return "err" with type "error" must not be referenced or used by a naked return`
+	for _, err = range []error{nil} {
+		_ = err
+	}
+	return errors.New("x")
+}
+
 // allowed: func literal, explicit return, no reference
 var goodLiteral = func() (sum int) {
 	return 1
